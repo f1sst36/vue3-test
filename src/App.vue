@@ -16,13 +16,13 @@
 
 <script lang="ts">
 import {Options, Vue} from 'vue-class-component';
-import {axiosInstance} from "@/api/axiosInstance";
 import AddTickerForm from "@/components/AddTickerForm.vue";
 import {Ticker} from "@/interfaces/ticker";
 import CurrencyChart from "@/components/CurrencyChart.vue";
 import TickerList from "@/components/TickerList.vue";
 import {TICKERS_LIST} from "@/constants/localStorage";
 import {TickersPaginationInfo} from "@/constants/pagination";
+import {TickersApi} from "@/api/tickersApi";
 
 const CHART_COLUMNS_COUNT = 80;
 
@@ -31,12 +31,7 @@ const CHART_COLUMNS_COUNT = 80;
   methods: {
     async addTicker(form: any) {
       try {
-        const result = await axiosInstance.get("/price", {
-          params: {
-            fsym: form.currencyName,
-            tsyms: "USD"
-          }
-        })
+        const result = await TickersApi.getTickerPriceByName(form.currencyName);
 
         if (!result.data?.USD) throw new Error('error');
 
@@ -47,23 +42,18 @@ const CHART_COLUMNS_COUNT = 80;
           prices: []
         }
 
-        this.tickersList.push(newTicker);
+        this.tickersList = [...this.tickersList, newTicker];
         this.selectTicker(newTicker.id);
-        this.saveTickersList();
       } catch (e) {
-        alert('Error');
+        alert('Add ticker error');
       }
     },
     deleteTicker(id: number | string) {
       if (this.selectedTicker?.id === id) this.selectedTicker = null;
       this.tickersList = this.tickersList.filter((ticker: Ticker) => ticker.id !== id);
-      this.saveTickersList();
     },
     selectTicker(id: number | string) {
       this.selectedTicker = this.tickersList.find((ticker: Ticker) => ticker.id === id) || null;
-    },
-    saveTickersList() {
-      localStorage.setItem(TICKERS_LIST, JSON.stringify(this.tickersList));
     },
     fetchTickerListFromLocalStorage() {
       const rawTickers = localStorage.getItem(TICKERS_LIST);
@@ -76,11 +66,7 @@ const CHART_COLUMNS_COUNT = 80;
     },
     async getCurrenciesNames() {
       try {
-        const result = await axiosInstance.get("/all/coinlist", {
-          params: {
-            summary: true
-          }
-        })
+        const result = await TickersApi.getCoinlist();
 
         this.currencyNames = Object.keys(result.data.Data);
       } catch (e) {
@@ -105,6 +91,33 @@ const CHART_COLUMNS_COUNT = 80;
     setFiltersValuesFromURL() {
       const params = Object.fromEntries(new URL(window.location.href).searchParams.entries());
       this.page = +params['page'] || 1;
+    },
+    subscribeForTickerPrices() {
+      setInterval(async () => {
+        if (!this.tickersList.length) return;
+
+        const currencies = this.tickersList.reduce(
+            (acc: string[], ticker: Ticker) =>
+                (acc.push(ticker.tickerName) && acc),
+            []
+        );
+
+        try {
+          const result = await TickersApi.getTickerPricesByNames(currencies);
+
+          if (!result.data[currencies[0]]) return;
+
+          this.tickersList.forEach((ticker: Ticker) => {
+            ticker.price = result.data[ticker.tickerName].USD;
+            ticker.prices.push(result.data[ticker.tickerName].USD);
+            if (ticker.prices.length >= CHART_COLUMNS_COUNT) {
+              ticker.prices.splice(0, 1);
+            }
+          })
+        } catch (e) {
+          console.log('Interval error', e)
+        }
+      }, 6000);
     }
   },
   computed: {
@@ -127,6 +140,9 @@ const CHART_COLUMNS_COUNT = 80;
   watch: {
     page() {
       this.setUrlParams();
+    },
+    tickersList() {
+      localStorage.setItem(TICKERS_LIST, JSON.stringify(this.tickersList));
     }
   },
   async created() {
@@ -134,37 +150,7 @@ const CHART_COLUMNS_COUNT = 80;
     this.setFiltersValuesFromURL();
 
     await this.getCurrenciesNames();
-
-    setInterval(async () => {
-      if (!this.tickersList.length) return;
-
-      const currencies = this.tickersList.reduce(
-          (acc: string[], ticker: Ticker) =>
-              (acc.push(ticker.tickerName) && acc),
-          []
-      );
-
-      try {
-        const result = await axiosInstance.get("/pricemulti", {
-          params: {
-            fsyms: currencies.join(","),
-            tsyms: "USD"
-          }
-        });
-
-        if (!result.data[currencies[0]]) return;
-
-        this.tickersList.forEach((ticker: Ticker) => {
-          ticker.price = result.data[ticker.tickerName].USD;
-          ticker.prices.push(result.data[ticker.tickerName].USD);
-          if (ticker.prices.length >= CHART_COLUMNS_COUNT) {
-            ticker.prices.splice(0, 1);
-          }
-        })
-      } catch (e) {
-        console.log('Interval error', e)
-      }
-    }, 4000);
+    this.subscribeForTickerPrices();
   },
   data() {
     return {

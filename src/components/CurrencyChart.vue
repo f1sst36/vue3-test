@@ -28,12 +28,12 @@ export default {
       maxPrice: 0
     }
   },
-  watch: {
-    prices(newPriceValue) {
-      this.maxPrice = Math.max(newPriceValue) || 0;
-      this.minPrice = Math.min(newPriceValue) || 0;
-    }
-  },
+  // watch: {
+  //   prices(newPriceValue) {
+  //     this.maxPrice = Math.max(newPriceValue) || 0;
+  //     this.minPrice = Math.min(newPriceValue) || 0;
+  //   }
+  // },
   methods: {
     calculateHeight(price) {
       this.minPrice = Math.min(...this.prices)
